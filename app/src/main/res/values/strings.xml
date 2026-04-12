@@ -1,3 +1,6 @@
 <resources>
     <string name="app_name">Nepali Keyboard</string>
+    <string name="ime_name">Nepali Keyboard</string>
+    <string name="subtype_nepali_devanagari">Nepali (Devanagari)</string>
+    <string name="subtype_nepali_roman">Nepali (Romanized)</string>
 </resources>

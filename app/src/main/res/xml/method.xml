@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    This file declares the IME's supported subtypes.
+    Each subtype represents a language/layout combination.
+    The 'imeSubtypeMode' value "keyboard" tells Android this is a keyboard IME.
+-->
+<input-method xmlns:android="http://schemas.android.com/apk/res/android"
+    android:settingsActivity="com.sukajee.nepalikeyboard.MainActivity">
+
+    <!-- Nepali — Devanagari direct input -->
+    <subtype
+        android:label="@string/subtype_nepali_devanagari"
+        android:imeSubtypeLocale="ne"
+        android:imeSubtypeMode="keyboard"
+        android:imeSubtypeExtraValue="KeyboardLayoutSet=nepali_devanagari" />
+
+    <!-- Nepali — Romanized input -->
+    <subtype
+        android:label="@string/subtype_nepali_roman"
+        android:imeSubtypeLocale="ne"
+        android:imeSubtypeMode="keyboard"
+        android:imeSubtypeExtraValue="KeyboardLayoutSet=nepali_roman" />
+
+</input-method>

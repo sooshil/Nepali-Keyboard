@@ -24,10 +24,10 @@ dependencyResolutionManagement {
 
 rootProject.name = "Nepali Keyboard"
 include(":app")
-//include(":core:core-common")
-//include(":core:core-ui")
-//include(":core:core-data")
-//include(":feature:feature-ime")
-//include(":feature:feature-transliteration")
-//include(":feature:feature-dictionary")
-//include(":feature:feature-settings")
+include(":core:common")
+include(":core:ui")
+include(":core:data")
+include(":feature:ime")
+include(":feature:transliteration")
+include(":feature:dictionary")
+include(":feature:settings")
