@@ -9,6 +9,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.sukajee.nepalikeyboard.feature.ime.state.KeyDefinition
 import com.sukajee.nepalikeyboard.feature.ime.state.KeyEvent
+import com.sukajee.nepalikeyboard.feature.ime.state.KeyType
 
 @Composable
 fun KeyboardRow(
@@ -38,13 +39,14 @@ fun KeyboardRow(
 }
 
 private fun resolveKeyEvent(key: KeyDefinition): KeyEvent {
-    return when (key.primary) {
-        "⌫" -> KeyEvent.Backspace
-        "↵", "Enter" -> KeyEvent.Enter
-        "Space", " " -> KeyEvent.Space
-        "⇧" -> KeyEvent.Shift
-        "!#1" -> KeyEvent.SymbolToggle
-        "नेपा\nEN" -> KeyEvent.ModeToggle
-        else -> KeyEvent.CharacterKey(key.primary)
+    return when (key.type) {
+        KeyType.BACKSPACE -> KeyEvent.Backspace
+        KeyType.ENTER -> KeyEvent.Enter
+        KeyType.SPACE -> KeyEvent.Space
+        KeyType.SHIFT -> KeyEvent.Shift
+        KeyType.SYMBOL_TOGGLE -> KeyEvent.SymbolToggle
+        KeyType.MODE_TOGGLE -> KeyEvent.ModeToggle
+        KeyType.CHARACTER,
+        KeyType.PUNCTUATION -> KeyEvent.CharacterKey(key.primary)
     }
 }

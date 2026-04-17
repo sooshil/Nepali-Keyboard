@@ -9,6 +9,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.AndroidUiDispatcher
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.compositionContext
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
@@ -55,23 +57,28 @@ class ImeComposeWindow(
     // ── View creation ─────────────────────────────────────────────────────
 
     fun createView(): View {
-        // KEY FIX: Use a FrameLayout as the root container.
-        // We set all three owners on THIS root — not on the ComposeView.
-        // When Compose walks up the tree from ComposeView, it hits this
-        // FrameLayout first and finds the owners it needs.
         val rootView = FrameLayout(context).apply {
             layoutParams = ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT,
             )
-
-            // Set owners on the ROOT, not on ComposeView
             setViewTreeLifecycleOwner(this@ImeComposeWindow)
             setViewTreeViewModelStoreOwner(this@ImeComposeWindow)
             setViewTreeSavedStateRegistryOwner(this@ImeComposeWindow)
+
+            // ── Navigation bar inset fix ──────────────────────────────────────
+            // The IME window can overlap the navigation bar. We listen for
+            // insets and apply bottom padding so the last keyboard row is
+            // always fully visible above the nav bar.
+            ViewCompat.setOnApplyWindowInsetsListener(this) { view, insets ->
+                val navBarHeight = insets.getInsets(
+                    WindowInsetsCompat.Type.navigationBars()
+                ).bottom
+                view.setPadding(0, 0, 0, navBarHeight)
+                insets
+            }
         }
 
-        // Set up the Recomposer manually so it uses our lifecycle scope
         val coroutineContext = AndroidUiDispatcher.CurrentThread
         val recomposerJob = SupervisorJob()
         val scope = CoroutineScope(coroutineContext + recomposerJob)
@@ -83,9 +90,7 @@ class ImeComposeWindow(
         }
 
         val composeView = ComposeView(context).apply {
-            // Set the recomposer on the ComposeView so it uses ours
             compositionContext = recomposer
-
             setContent {
                 val state by viewModel.state.collectAsStateWithLifecycle()
                 NepaliKeyboardTheme {
@@ -98,10 +103,7 @@ class ImeComposeWindow(
         }
 
         rootView.addView(composeView)
-
-        // Move to RESUMED after view is fully set up
         lifecycleRegistry.currentState = Lifecycle.State.RESUMED
-
         return rootView
     }
 

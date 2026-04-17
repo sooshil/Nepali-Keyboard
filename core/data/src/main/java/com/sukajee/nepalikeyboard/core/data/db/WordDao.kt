@@ -42,7 +42,7 @@ interface WordDao {
     @Query("UPDATE words SET frequency = frequency + 1 WHERE word = :word")
     suspend fun incrementFrequency(word: String)
 
-    @Insert(onConflict = OnConflictStrategy.Companion.IGNORE)
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertAll(words: List<WordEntity>)
 
     @Query("SELECT COUNT(*) FROM words")

@@ -37,29 +37,16 @@ data class KeyboardState(
     val shiftState: ShiftState = ShiftState.OFF,
 
     /**
-     * The current buffer of typed characters waiting to be committed.
-     * In ROMAN mode this is the raw roman string (e.g. "ramr") being
-     * transliterated. In DEVANAGARI mode it's the pending Devanagari
-     * string before a space/commit action.
+     * In ROMAN mode: the raw roman characters typed so far (e.g. "mero").
+     * This is shown inline in the text field as composing text.
+     * Cleared on space/enter/suggestion.
+     * Empty in DEVANAGARI and SYMBOL modes.
      */
-    val pendingBuffer: String = "",
+    val romanBuffer: String = "",
 
-    /**
-     * The transliterated preview shown above the keyboard or inline.
-     * Only relevant in ROMAN mode.
-     */
-    val transliterationPreview: String = "",
-
-    /** Word suggestions from the dictionary shown in the suggestion bar. */
     val suggestions: List<String> = emptyList(),
-
-    /** Whether the suggestion bar is visible. */
     val showSuggestions: Boolean = true,
-
-    /** Whether the long-press popup is showing, and for which key. */
     val longPressKey: KeyDefinition? = null,
-
-    /** True while the keyboard is initialising (loading dictionary etc.) */
     val isLoading: Boolean = false,
 )
 

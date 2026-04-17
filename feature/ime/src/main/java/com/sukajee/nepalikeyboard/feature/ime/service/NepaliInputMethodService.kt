@@ -66,14 +66,22 @@ class NepaliInputMethodService : InputMethodService() {
     private fun handleCommitEvent(event: CommitEvent) {
         val ic = currentInputConnection ?: return
         when (event) {
+            is CommitEvent.SetComposingText -> {
+                // Shows text underlined in the field, replacing previous composing text
+                ic.setComposingText(event.text, 1)
+            }
             is CommitEvent.CommitText -> {
+                // Finalizes text — clears any composing state first automatically
                 ic.commitText(event.text, 1)
+            }
+            is CommitEvent.FinishComposing -> {
+                // Clears composing text without committing
+                ic.finishComposingText()
             }
             is CommitEvent.DeleteBackward -> {
                 ic.deleteSurroundingText(event.count, 0)
             }
             is CommitEvent.DeleteWordBackward -> {
-                // Get text before cursor and delete back to previous space
                 val before = ic.getTextBeforeCursor(50, 0)?.toString() ?: return
                 val trimmed = before.trimEnd()
                 val lastSpace = trimmed.lastIndexOf(' ')

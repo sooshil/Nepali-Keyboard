@@ -164,7 +164,7 @@ private val matraRow = listOf(
 )
 
 private val actionRow = listOf(
-    KeyDefinition("नेपा\nEN", type = KeyType.MODE_TOGGLE, widthWeight = 1.5f),
+    KeyDefinition("नेपा-EN", type = KeyType.MODE_TOGGLE, widthWeight = 1.5f),
     KeyDefinition("!#1", type = KeyType.SYMBOL_TOGGLE, widthWeight = 1.2f),
     KeyDefinition("Space", type = KeyType.SPACE, widthWeight = 4f),
     KeyDefinition("⌫", type = KeyType.BACKSPACE, widthWeight = 1.5f),

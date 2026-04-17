@@ -20,16 +20,6 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-/**
- * The brain of the keyboard.
- *
- * Responsibilities:
- * - Maintain [KeyboardState] as a single source of truth
- * - Process [KeyEvent]s from the UI
- * - Coordinate with [TransliterationEngine] for Roman mode
- * - Coordinate with [DictionaryRepository] for suggestions
- * - Emit [CommitEvent]s that the IME Service observes and sends to the app
- */
 class KeyboardViewModel(
     private val transliterationEngine: TransliterationEngine,
     private val dictionaryRepository: DictionaryRepository,
@@ -39,10 +29,6 @@ class KeyboardViewModel(
     private val _state = MutableStateFlow(KeyboardState())
     val state: StateFlow<KeyboardState> = _state.asStateFlow()
 
-    /**
-     * Events emitted to the IME service to commit text / perform editor actions.
-     * The service collects this flow and calls InputConnection methods accordingly.
-     */
     private val _commitEvents = MutableSharedFlow<CommitEvent>()
     val commitEvents: SharedFlow<CommitEvent> = _commitEvents.asSharedFlow()
 
@@ -85,74 +71,73 @@ class KeyboardViewModel(
         when (current.inputMode) {
             InputMode.ROMAN -> handleRomanCharacter(character)
             InputMode.DEVANAGARI -> handleDevanagariCharacter(character)
-            InputMode.SYMBOL -> commitText(character)
+            InputMode.SYMBOL -> emit(CommitEvent.CommitText(character))
         }
-        // After a character key, if shift was ON (not LOCKED), revert it
         if (current.shiftState == ShiftState.ON) {
             _state.update { it.copy(shiftState = ShiftState.OFF) }
         }
     }
 
     private fun handleDevanagariCharacter(character: String) {
-        // In direct Devanagari mode, commit each character immediately.
-        // Matra logic: if character is a vowel sign (matra), it should
-        // attach to the preceding consonant — the Android text engine
-        // handles visual rendering, we just commit the Unicode code point.
-        commitText(character)
-        updateSuggestions()
+        // Direct Devanagari — commit immediately, no buffering needed
+        emit(CommitEvent.CommitText(character))
     }
 
     private fun handleRomanCharacter(char: String) {
-        val currentBuffer = _state.value.pendingBuffer + char
-        val result = transliterationEngine.transliterate(currentBuffer)
+        // Append to the raw roman buffer
+        val newBuffer = _state.value.romanBuffer + char
 
-        _state.update { state ->
-            state.copy(
-                pendingBuffer = result.remainingBuffer,
-                transliterationPreview = result.devanagari,
-            )
-        }
+        // Show the raw roman text inline as composing text (underlined in the field)
+        // setComposingText replaces whatever composing text was there before
+        emit(CommitEvent.SetComposingText(newBuffer))
 
-        if (result.committed.isNotEmpty()) {
-            commitText(result.committed)
-        }
+        // Update state
+        _state.update { it.copy(romanBuffer = newBuffer) }
 
-        updateSuggestions()
+        // Update suggestion bar with Devanagari candidates for this roman word
+        updateSuggestions(newBuffer)
     }
 
     private fun handleBackspace() {
         val current = _state.value
-        when {
-            // If there's a pending Roman buffer, pop last char from it
-            current.inputMode == InputMode.ROMAN && current.pendingBuffer.isNotEmpty() -> {
-                val newBuffer = current.pendingBuffer.dropLast(1)
-                val preview = if (newBuffer.isEmpty()) ""
-                else transliterationEngine.transliterate(newBuffer).devanagari
-
-                _state.update { it.copy(pendingBuffer = newBuffer, transliterationPreview = preview) }
+        if (current.inputMode == InputMode.ROMAN && current.romanBuffer.isNotEmpty()) {
+            // Remove last character from roman buffer
+            val newBuffer = current.romanBuffer.dropLast(1)
+            if (newBuffer.isEmpty()) {
+                // Buffer is now empty — clear composing text and suggestions
+                emit(CommitEvent.FinishComposing)
+                clearSuggestions()
+            } else {
+                // Update composing text with shorter buffer
+                emit(CommitEvent.SetComposingText(newBuffer))
+                updateSuggestions(newBuffer)
             }
-            // Otherwise delete one character in the connected app
-            else -> {
-                emit(CommitEvent.DeleteBackward(1))
-                updateSuggestions()
-            }
+            _state.update { it.copy(romanBuffer = newBuffer) }
+        } else {
+            // No composing text — delete one char from the app normally
+            emit(CommitEvent.DeleteBackward(1))
+            clearSuggestions()
         }
     }
 
     private fun handleBackspaceLong() {
-        // Commit any pending buffer first, then delete a word
-        flushBuffer()
+        cancelComposing()
         emit(CommitEvent.DeleteWordBackward)
     }
 
     private fun handleSpace() {
-        flushBuffer()
-        commitText(" ")
+        if (_state.value.inputMode == InputMode.ROMAN && _state.value.romanBuffer.isNotEmpty()) {
+            commitRomanBuffer(appendSpace = true)
+        } else {
+            emit(CommitEvent.CommitText(" "))
+        }
         clearSuggestions()
     }
 
     private fun handleEnter() {
-        flushBuffer()
+        if (_state.value.inputMode == InputMode.ROMAN && _state.value.romanBuffer.isNotEmpty()) {
+            commitRomanBuffer(appendSpace = false)
+        }
         emit(CommitEvent.PerformEditorAction)
     }
 
@@ -172,14 +157,14 @@ class KeyboardViewModel(
     }
 
     private fun handleModeToggle() {
-        flushBuffer()
+        cancelComposing()
         _state.update { state ->
             val newMode = when (state.inputMode) {
                 InputMode.DEVANAGARI -> InputMode.ROMAN
                 InputMode.ROMAN -> InputMode.DEVANAGARI
                 InputMode.SYMBOL -> InputMode.DEVANAGARI
             }
-            state.copy(inputMode = newMode, pendingBuffer = "", transliterationPreview = "")
+            state.copy(inputMode = newMode, romanBuffer = "")
         }
         viewModelScope.launch {
             preferences.setInputMode(_state.value.inputMode.name)
@@ -187,18 +172,19 @@ class KeyboardViewModel(
     }
 
     private fun handleSymbolToggle() {
-        flushBuffer()
+        cancelComposing()
         _state.update { state ->
             val newMode = if (state.inputMode == InputMode.SYMBOL) InputMode.DEVANAGARI
             else InputMode.SYMBOL
-            state.copy(inputMode = newMode)
+            state.copy(romanBuffer = "")
         }
     }
 
     private fun handleSuggestionSelected(word: String) {
-        flushBuffer()
-        commitText(word)
-        commitText(" ")
+        // Replace the composing roman text with the selected Nepali word
+        emit(CommitEvent.CommitText(word))
+        emit(CommitEvent.CommitText(" "))
+        _state.update { it.copy(romanBuffer = "") }
         clearSuggestions()
         viewModelScope.launch {
             dictionaryRepository.recordWordUsage(word)
@@ -208,40 +194,53 @@ class KeyboardViewModel(
     // ── Helpers ───────────────────────────────────────────────────────────
 
     /**
-     * Commit any pending Roman buffer as Devanagari and clear it.
-     * Called before space, enter, suggestion select, mode toggle.
+     * Transliterate the current roman buffer and commit it.
+     * If no dictionary match exists the raw roman is committed as-is.
+     * Called on space and enter.
      */
-    private fun flushBuffer() {
-        val current = _state.value
-        if (current.inputMode == InputMode.ROMAN && current.pendingBuffer.isNotEmpty()) {
-            val result = transliterationEngine.forceCommit(current.pendingBuffer)
-            commitText(result)
-            _state.update { it.copy(pendingBuffer = "", transliterationPreview = "") }
-        }
+    private fun commitRomanBuffer(appendSpace: Boolean) {
+        val buffer = _state.value.romanBuffer
+        if (buffer.isEmpty()) return
+
+        // Use top suggestion if available, otherwise force-transliterate,
+        // and if that somehow fails, fall back to the raw roman string.
+        val topSuggestion = _state.value.suggestions.firstOrNull()
+        val textToCommit = topSuggestion
+            ?: transliterationEngine.forceCommit(buffer).takeIf { it.isNotEmpty() }
+            ?: buffer
+
+        val finalText = if (appendSpace) "$textToCommit " else textToCommit
+        emit(CommitEvent.CommitText(finalText))
+        _state.update { it.copy(romanBuffer = "") }
     }
 
-    private fun commitText(text: String) {
-        emit(CommitEvent.CommitText(text))
+    /**
+     * Abandon the current composing session without committing anything.
+     * Used on mode toggle, symbol toggle, long backspace.
+     */
+    private fun cancelComposing() {
+        if (_state.value.romanBuffer.isNotEmpty()) {
+            emit(CommitEvent.FinishComposing)
+            _state.update { it.copy(romanBuffer = "") }
+            clearSuggestions()
+        }
     }
 
     private fun emit(event: CommitEvent) {
         viewModelScope.launch { _commitEvents.emit(event) }
     }
 
-    private fun updateSuggestions() {
+    private fun updateSuggestions(romanBuffer: String) {
         if (!_state.value.showSuggestions) return
         suggestionJob?.cancel()
         suggestionJob = viewModelScope.launch {
-            val query = when (_state.value.inputMode) {
-                InputMode.ROMAN -> _state.value.transliterationPreview
-                InputMode.DEVANAGARI -> "" // TODO: get text before cursor from InputConnection
-                InputMode.SYMBOL -> ""
-            }
-            if (query.isBlank()) {
+            // Transliterate the buffer to get a Devanagari prefix for DB lookup
+            val devanagariPrefix = transliterationEngine.forceCommit(romanBuffer)
+            if (devanagariPrefix.isBlank()) {
                 clearSuggestions()
                 return@launch
             }
-            dictionaryRepository.getSuggestions(query).collectLatest { words ->
+            dictionaryRepository.getSuggestions(devanagariPrefix).collectLatest { words ->
                 _state.update { it.copy(suggestions = words) }
             }
         }
@@ -252,11 +251,13 @@ class KeyboardViewModel(
     }
 }
 
-/**
- * Events emitted from ViewModel → IME Service → InputConnection.
- */
 sealed interface CommitEvent {
+    /** Replace composing text in the field with this string (shown underlined) */
+    data class SetComposingText(val text: String) : CommitEvent
+    /** Finalize composing — commit this text permanently */
     data class CommitText(val text: String) : CommitEvent
+    /** Clear composing text without committing anything */
+    data object FinishComposing : CommitEvent
     data class DeleteBackward(val count: Int) : CommitEvent
     data object DeleteWordBackward : CommitEvent
     data object PerformEditorAction : CommitEvent
