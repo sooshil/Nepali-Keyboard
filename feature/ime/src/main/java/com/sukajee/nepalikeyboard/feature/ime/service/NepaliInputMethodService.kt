@@ -93,9 +93,6 @@ class NepaliInputMethodService : InputMethodService() {
                 val editorInfo = currentInputEditorInfo ?: return
                 ic.performEditorAction(editorInfo.imeOptions)
             }
-            is CommitEvent.DeleteSurrounding -> {
-                ic.deleteSurroundingText(event.count, 0)
-            }
         }
     }
 }

@@ -7,7 +7,6 @@ import com.sukajee.nepalikeyboard.feature.dictionary.repository.DictionaryReposi
 import com.sukajee.nepalikeyboard.feature.ime.state.InputMode
 import com.sukajee.nepalikeyboard.feature.ime.state.KeyEvent
 import com.sukajee.nepalikeyboard.feature.ime.state.KeyboardState
-import com.sukajee.nepalikeyboard.feature.ime.state.LastCommit
 import com.sukajee.nepalikeyboard.feature.ime.state.ShiftState
 import com.sukajee.nepalikeyboard.feature.transliteration.engine.TransliterationEngine
 import kotlinx.coroutines.Job
@@ -92,8 +91,8 @@ class KeyboardViewModel(
         // setComposingText replaces whatever composing text was there before
         emit(CommitEvent.SetComposingText(newBuffer))
 
-        // Any new typing clears the lastCommit — user moved on
-        _state.update { it.copy(romanBuffer = newBuffer, lastCommit = null) }
+        // Update state
+        _state.update { it.copy(romanBuffer = newBuffer) }
 
         // Update suggestion bar with Devanagari candidates for this roman word
         updateSuggestions(newBuffer)
@@ -101,43 +100,23 @@ class KeyboardViewModel(
 
     private fun handleBackspace() {
         val current = _state.value
-
-        when {
-            // Case 1: Active roman composing session — pop last roman char
-            current.inputMode == InputMode.ROMAN && current.romanBuffer.isNotEmpty() -> {
-                val newBuffer = current.romanBuffer.dropLast(1)
-                if (newBuffer.isEmpty()) {
-                    emit(CommitEvent.FinishComposing)
-                    clearSuggestions()
-                } else {
-                    emit(CommitEvent.SetComposingText(newBuffer))
-                    updateSuggestions(newBuffer)
-                }
-                _state.update { it.copy(romanBuffer = newBuffer, lastCommit = null) }
-            }
-
-            // Case 2: No active composing, but we just committed a roman word.
-            // Delete the committed Nepali text and restore roman buffer for editing.
-            current.inputMode == InputMode.ROMAN && current.lastCommit != null -> {
-                val last = current.lastCommit
-                // Delete the committed Nepali text (committed length in Unicode chars)
-                emit(CommitEvent.DeleteSurrounding(last.committedText.length))
-                // Restore the roman buffer as composing text so user can edit it
-                emit(CommitEvent.SetComposingText(last.romanBuffer))
-                _state.update {
-                    it.copy(
-                        romanBuffer = last.romanBuffer,
-                        lastCommit = null,
-                    )
-                }
-                updateSuggestions(last.romanBuffer)
-            }
-
-            // Case 3: Normal delete — no composing, no lastCommit
-            else -> {
-                emit(CommitEvent.DeleteBackward(1))
+        if (current.inputMode == InputMode.ROMAN && current.romanBuffer.isNotEmpty()) {
+            // Remove last character from roman buffer
+            val newBuffer = current.romanBuffer.dropLast(1)
+            if (newBuffer.isEmpty()) {
+                // Buffer is now empty — clear composing text and suggestions
+                emit(CommitEvent.FinishComposing)
                 clearSuggestions()
+            } else {
+                // Update composing text with shorter buffer
+                emit(CommitEvent.SetComposingText(newBuffer))
+                updateSuggestions(newBuffer)
             }
+            _state.update { it.copy(romanBuffer = newBuffer) }
+        } else {
+            // No composing text — delete one char from the app normally
+            emit(CommitEvent.DeleteBackward(1))
+            clearSuggestions()
         }
     }
 
@@ -223,24 +202,16 @@ class KeyboardViewModel(
         val buffer = _state.value.romanBuffer
         if (buffer.isEmpty()) return
 
+        // Use top suggestion if available, otherwise force-transliterate,
+        // and if that somehow fails, fall back to the raw roman string.
         val topSuggestion = _state.value.suggestions.firstOrNull()
-        val nepaliWord = topSuggestion
+        val textToCommit = topSuggestion
             ?: transliterationEngine.forceCommit(buffer).takeIf { it.isNotEmpty() }
             ?: buffer
 
-        val committedText = if (appendSpace) "$nepaliWord " else nepaliWord
-        emit(CommitEvent.CommitText(committedText))
-
-        // Remember this commit so backspace can undo it
-        _state.update {
-            it.copy(
-                romanBuffer = "",
-                lastCommit = LastCommit(
-                    romanBuffer = buffer,
-                    committedText = committedText,
-                )
-            )
-        }
+        val finalText = if (appendSpace) "$textToCommit " else textToCommit
+        emit(CommitEvent.CommitText(finalText))
+        _state.update { it.copy(romanBuffer = "") }
     }
 
     /**
@@ -290,6 +261,4 @@ sealed interface CommitEvent {
     data class DeleteBackward(val count: Int) : CommitEvent
     data object DeleteWordBackward : CommitEvent
     data object PerformEditorAction : CommitEvent
-    /** Delete [count] characters immediately before the cursor */
-    data class DeleteSurrounding(val count: Int) : CommitEvent
 }
