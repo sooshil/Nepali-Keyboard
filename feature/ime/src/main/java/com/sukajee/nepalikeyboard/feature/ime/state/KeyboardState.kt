@@ -48,6 +48,25 @@ data class KeyboardState(
     val showSuggestions: Boolean = true,
     val longPressKey: KeyDefinition? = null,
     val isLoading: Boolean = false,
+    /**
+     * The roman buffer of the most recently committed word, and the
+     * Nepali text that was committed from it. Used to restore the
+     * roman buffer if the user backspaces immediately after committing.
+     *
+     * Cleared as soon as any other key is pressed after the commit.
+     */
+    val lastCommit: LastCommit? = null,
+)
+
+/**
+ * Snapshot of the most recently committed roman word.
+ * [romanBuffer]     — e.g. "pani"
+ * [committedText]   — e.g. "पनि " (including trailing space if any)
+ * [committedLength] — number of characters committed (for deletion)
+ */
+data class LastCommit(
+    val romanBuffer: String,
+    val committedText: String,
 )
 
 /**

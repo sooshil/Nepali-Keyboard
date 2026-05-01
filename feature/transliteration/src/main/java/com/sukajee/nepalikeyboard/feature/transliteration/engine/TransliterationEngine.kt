@@ -77,32 +77,39 @@ class TransliterationEngine {
     private fun convertToDevanagari(roman: String): String {
         val result = StringBuilder()
         var i = 0
+        // Tracks whether the last resolved output was a vowel.
+        // This prevents consonant-conjunct insertion after an inherent-a,
+        // which produces an empty matra but still logically "breaks" the cluster.
+        var previousWasVowel = false
 
         while (i < roman.length) {
             val match = findLongestMatch(roman, i)
             if (match != null) {
                 val (matchedRoman, rawDevanagari) = match
 
-                // Apply matra if the preceding output ended with a consonant
-                val devanagari = if (isVowelOutput(rawDevanagari)) {
-                    MatraMapper.resolve(
+                if (isVowelOutput(rawDevanagari)) {
+                    // Resolve to matra if preceding output was a consonant
+                    val matra = MatraMapper.resolve(
                         vowel = rawDevanagari,
                         precedingTextEndsWithConsonant = MatraMapper.endsWithConsonant(result.toString())
                     )
+                    result.append(matra)
+                    previousWasVowel = true
                 } else {
-                    // It's a consonant output — if the previous output was also a consonant,
-                    // insert halanta (्) to form a conjunct cluster
-                    if (MatraMapper.endsWithConsonant(result.toString()) && rawDevanagari.isNotEmpty()) {
+                    // It's a consonant — insert halanta only if the PREVIOUS
+                    // output was also a consonant (not a vowel, even inherent-a)
+                    if (!previousWasVowel && MatraMapper.endsWithConsonant(result.toString())) {
                         result.append(HALANTA)
                     }
-                    rawDevanagari
+                    result.append(rawDevanagari)
+                    previousWasVowel = false
                 }
 
-                result.append(devanagari)
                 i += matchedRoman.length
             } else {
-                // No rule matched — pass the character through as-is
+                // No rule matched — pass through as-is and reset vowel tracking
                 result.append(roman[i])
+                previousWasVowel = false
                 i++
             }
         }
